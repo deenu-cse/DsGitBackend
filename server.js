@@ -7,6 +7,7 @@ const WebSocket = require('ws');
 
 const userController = require('./controllers/userController');
 const adminController = require('./controllers/adminController');
+const battleController = require('./controllers/battleController');
 const battleHandler = require('./ws/battleHandler');
 
 const app = express();
@@ -19,7 +20,7 @@ app.use(express.json());
 app.use(cors({
   origin: (origin, callback) => {
     // allow chrome-extension:// origins
-    if (!origin || origin.startsWith('chrome-extension://')) {
+    if (!origin || origin.startsWith('chrome-extension://') || origin.startsWith('http://localhost:3001')) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -41,10 +42,87 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', time: new Date() });
 });
 
+// ─── Web OAuth: exchange GitHub code for profile ───────────────────────────
+app.post('/auth/github-web', async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Missing code' });
+
+    const clientId = process.env.GITHUB_WEB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_WEB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: 'Server missing GitHub OAuth config' });
+    }
+
+    // Exchange code → token directly with GitHub
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) {
+      return res.status(401).json({ error: 'Token exchange failed: ' + (tokenData.error_description || tokenData.error || 'unknown') });
+    }
+
+    // Fetch GitHub profile using the token
+    const profileRes = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        'User-Agent': 'DSA-Tracker-Web',
+      },
+    });
+    const profile = await profileRes.json();
+    if (!profile.login) {
+      return res.status(401).json({ error: 'Failed to fetch GitHub profile' });
+    }
+
+    // Sync user to DB (same as extension does)
+    const User = require('./models/User');
+    let user = await User.findOne({ githubId: String(profile.id) });
+    if (!user) {
+      user = new User({ githubId: String(profile.id), username: profile.login, avatar_url: profile.avatar_url });
+    } else {
+      user.username = profile.login;
+      user.avatar_url = profile.avatar_url;
+      user.lastActive = Date.now();
+    }
+    await user.save();
+
+    return res.json({
+      success: true,
+      user: {
+        username: profile.login,
+        avatar_url: profile.avatar_url,
+        githubId: String(profile.id),
+      }
+    });
+  } catch (err) {
+    console.error('github-web auth error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 app.post('/api/sync-user', userController.syncUser);
 app.post('/api/update-email', userController.updateEmail);
+app.get('/users/:username/public-stats', userController.getUserPublicStats);
 
 app.get('/admin/stats', adminController.getAdminStats);
+
+app.get('/battles/wall', battleController.getBattleWall);
+app.get('/battles/open', battleController.getOpenBattles);
+app.get('/battles/:id', battleController.getBattleById);
+app.post('/battles/create', battleController.createBattle);
+app.post('/battles/:id/accept', battleController.acceptBattle);
+app.post('/battles/:id/close-joining', battleController.closeJoining);
 
 // WebSocket setup
 wss.on('connection', (ws, req) => {

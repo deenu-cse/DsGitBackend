@@ -42,3 +42,45 @@ exports.updateEmail = async (req, res) => {
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
+exports.getUserPublicStats = async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    // Find the user to get basic info
+    const user = await User.findOne({ username: new RegExp('^' + username + '$', 'i') }).lean();
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // In a real scenario, you'd fetch the actual streak/platform data.
+    // Since this may come from github polling, we will mock it or return 0s if we don't store it yet.
+    // The previous extension fetched this via gh-pages. 
+    // For the UI, we'll return mock stats as placeholders for the public stats endpoints.
+    
+    return res.json({
+      success: true,
+      stats: {
+        username: user.username,
+        avatar_url: user.avatar_url,
+        streak: 12,
+        longestStreak: 25,
+        totalSolved: 154,
+        hardCount: 15,
+        mediumCount: 89,
+        easyCount: 50,
+        platforms: {
+          leetcode: 100,
+          gfg: 40,
+          codingninjas: 14
+        },
+        badges: ['30-Day Warrior', 'Early Bird'],
+        dayNumber: 45
+      }
+    });
+
+  } catch (error) {
+    console.error('getUserPublicStats Error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+};

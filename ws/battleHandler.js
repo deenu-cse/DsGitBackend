@@ -26,6 +26,21 @@ const sendToUser = (username, messageObj) => {
   }
 };
 
+exports.broadcastAll = (messageObj) => {
+  const messageStr = JSON.stringify(messageObj);
+  for (const ws of clients.values()) {
+    if (ws.readyState === 1) {
+      ws.send(messageStr);
+    }
+  }
+};
+
+exports.broadcastToParticipants = (participants, messageObj) => {
+  participants.forEach(p => {
+    sendToUser(p.username, messageObj);
+  });
+};
+
 exports.handleMessage = async (username, message, ws) => {
   try {
     const data = JSON.parse(message);
@@ -90,32 +105,90 @@ exports.handleMessage = async (username, message, ws) => {
       }
     }
     // E.g., client detects missed day, sends BATTLE_LOST
-    else if (type === 'BATTLE_LOST') {
-      const { battleId } = data.payload;
+    else if (type === 'BATTLE_LOST' || type === 'PLAYER_ELIMINATED') {
+      const { battleId, dayBrokeOn } = data.payload;
       const battle = await Battle.findOne({ battleId, status: 'active' });
       if (!battle) return;
 
-      battle.status = 'lost';
-      battle.loser = username;
-      battle.winner = (battle.challenger === username) ? battle.opponent : battle.challenger;
+      // New Participant architecture logic
+      const participant = battle.participants.find(p => p.username === username);
+      if (participant) {
+        participant.isEliminated = true;
+        participant.eliminatedOnDay = dayBrokeOn || null;
+      }
+      
+      // Determine if only one participant remains
+      const remaining = battle.participants.filter(p => !p.isEliminated);
+      if (remaining.length === 1 && battle.participants.length > 1) {
+        battle.status = 'won';
+        battle.winner = remaining[0].username;
+        // Old fields fallback
+        battle.loser = username;
+      } else if (remaining.length === 0) {
+        battle.status = 'draw';
+      }
+
       await battle.save();
 
-      // Notify winner via WS (They Won)
-      sendToUser(battle.winner, {
-        type: 'BATTLE_WON',
-        payload: { battleId, loser: username }
+      // Broadcast elimination
+      exports.broadcastToParticipants(battle.participants, {
+        type: 'PLAYER_ELIMINATED',
+        payload: { username, dayBrokeOn, battleId }
       });
 
-      // Email both
-      const winnerUser = await User.findOne({ username: new RegExp('^' + battle.winner + '$', 'i') });
-      const loserUser = await User.findOne({ username: new RegExp('^' + battle.loser + '$', 'i') });
+      // If finished, broadcast win
+      if (battle.status === 'won') {
+        exports.broadcastToParticipants(battle.participants, {
+          type: 'BATTLE_WON',
+          payload: { winner: battle.winner, loser: username, battleStats: battle }
+        });
 
-      if (winnerUser && winnerUser.email) {
-        await emailService.sendBattleWon(winnerUser.email, username);
+        // Email both
+        const winnerUser = await User.findOne({ username: new RegExp('^' + battle.winner + '$', 'i') });
+        const loserUser = await User.findOne({ username: new RegExp('^' + username + '$', 'i') });
+
+        if (winnerUser && winnerUser.email) {
+          await emailService.sendBattleWon(winnerUser.email, username);
+        }
+        if (loserUser && loserUser.email) {
+          await emailService.sendBattleLost(loserUser.email, battle.winner);
+        }
       }
-      if (loserUser && loserUser.email) {
-        await emailService.sendBattleLost(loserUser.email, battle.winner);
+    }
+    else if (type === 'BATTLE_ACTIVITY') {
+      const { battleId, questionName, platform, difficulty, points } = data.payload;
+      const battle = await Battle.findOne({ battleId, status: 'active' });
+      if (!battle) return;
+
+      // Update participant stats
+      const participant = battle.participants.find(p => p.username === username);
+      if (participant && !participant.isEliminated) {
+        participant.score += points || 0;
+        if (difficulty === 'Hard') participant.hardSolved++;
+        if (difficulty === 'Medium') participant.mediumSolved++;
+        if (difficulty === 'Easy') participant.easySolved++;
+        if (platform === 'LeetCode') participant.platforms.leetcode++;
+        if (platform === 'GeeksForGeeks') participant.platforms.gfg++;
+        if (platform === 'CodingNinjas') participant.platforms.codingninjas++;
       }
+
+      const activity = {
+        username,
+        questionName,
+        platform,
+        difficulty,
+        points: points || 0,
+        timestamp: new Date()
+      };
+      
+      battle.activityFeed.push(activity);
+      await battle.save();
+
+      // Room broadcast
+      exports.broadcastToParticipants(battle.participants, {
+        type: 'BATTLE_ACTIVITY',
+        payload: activity
+      });
     }
     else if (type === 'PING') {
       // Just keepalive
