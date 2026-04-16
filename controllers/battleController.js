@@ -117,6 +117,21 @@ exports.createBattle = async (req, res) => {
       });
     }
 
+    // CRITICAL: Notify the creator's extension about the new battle for real-time tracking
+    const battleHandler = require('../ws/battleHandler');
+    battleHandler.sendToUser(challengerUsername, {
+      type: 'BATTLE_SYNC',
+      payload: { 
+        battle: {
+          id: newBattle.battleId,
+          type: newBattle.type,
+          duration: newBattle.duration,
+          opponent: newBattle.opponent,
+          status: newBattle.status
+        }
+      }
+    });
+
     return res.json({ success: true, battle: newBattle });
 
   } catch (err) {
@@ -164,6 +179,39 @@ exports.acceptBattle = async (req, res) => {
 
     await battle.save();
 
+    // CRITICAL: Notify the joining user's extension to sync state
+    const battleHandler = require('../ws/battleHandler');
+    battleHandler.sendToUser(username, {
+      type: 'BATTLE_SYNC',
+      payload: { 
+        battle: {
+          id: battle.battleId,
+          type: battle.type,
+          duration: battle.duration,
+          opponent: battle.challenger === username ? battle.opponent : battle.challenger,
+          status: battle.status
+        }
+      }
+    });
+
+    // Notify other participants if the status changed to active
+    if (battle.status === 'active') {
+      battle.participants.forEach(p => {
+        if (p.username !== username) {
+          battleHandler.sendToUser(p.username, {
+            type: 'BATTLE_SYNC',
+            payload: { 
+              battle: {
+                id: battle.battleId,
+                status: 'active',
+                endDate: battle.endDate
+              }
+            }
+          });
+        }
+      });
+    }
+
     return res.json({ success: true, battle });
   } catch (err) {
     console.error('acceptBattle error:', err);
@@ -198,6 +246,23 @@ exports.closeJoining = async (req, res) => {
     }
 
     await battle.save();
+
+    // CRITICAL: Notify all participants to sync state
+    const battleHandler = require('../ws/battleHandler');
+    battle.participants.forEach(p => {
+      battleHandler.sendToUser(p.username, {
+        type: 'BATTLE_SYNC',
+        payload: { 
+          battle: {
+            id: battle.battleId,
+            status: battle.status,
+            acceptingJoins: false,
+            endDate: battle.endDate
+          }
+        }
+      });
+    });
+
     return res.json({ success: true, battle });
   } catch (err) {
     console.error('closeJoining error:', err);
