@@ -19,7 +19,7 @@ exports.removeClient = (username) => {
   }
 };
 
-const sendToUser = (username, messageObj) => {
+exports.sendToUser = (username, messageObj) => {
   const ws = clients.get(username.toLowerCase());
   if (ws && ws.readyState === 1) { // WebSocket.OPEN
     ws.send(JSON.stringify(messageObj));
@@ -37,7 +37,7 @@ exports.broadcastAll = (messageObj) => {
 
 exports.broadcastToParticipants = (participants, messageObj) => {
   participants.forEach(p => {
-    sendToUser(p.username, messageObj);
+    exports.sendToUser(p.username, messageObj);
   });
 };
 
@@ -60,7 +60,7 @@ exports.handleMessage = async (username, message, ws) => {
       await battle.save();
 
       // Notify Opponent via WS
-      sendToUser(opponent, {
+      exports.sendToUser(opponent, {
         type: 'CHALLENGE_RECEIVED',
         payload: { battle }
       });
@@ -87,13 +87,13 @@ exports.handleMessage = async (username, message, ws) => {
       await battle.save();
 
       // Notify Challenger via WS
-      sendToUser(battle.challenger, {
+      exports.sendToUser(battle.challenger, {
         type: 'CHALLENGE_ACCEPTED',
         payload: { battleId, opponent: username }
       });
 
       // Notify accepter (to ensure their UI updates)
-      sendToUser(username, {
+      exports.sendToUser(username, {
         type: 'CHALLENGE_ACCEPTED_CONFIRM',
         payload: { battleId }
       });
@@ -107,7 +107,7 @@ exports.handleMessage = async (username, message, ws) => {
     // E.g., client detects missed day, sends BATTLE_LOST
     else if (type === 'BATTLE_LOST' || type === 'PLAYER_ELIMINATED') {
       const { battleId, dayBrokeOn } = data.payload;
-      const battle = await Battle.findOne({ battleId, status: 'active' });
+      const battle = await Battle.findOne({ battleId, status: { $in: ['active', 'pending_invite'] } });
       if (!battle) return;
 
       // New Participant architecture logic
@@ -157,7 +157,7 @@ exports.handleMessage = async (username, message, ws) => {
     }
     else if (type === 'BATTLE_ACTIVITY') {
       const { battleId, questionName, platform, difficulty, points } = data.payload;
-      const battle = await Battle.findOne({ battleId, status: 'active' });
+      const battle = await Battle.findOne({ battleId, status: { $in: ['active', 'pending_invite'] } });
       if (!battle) return;
 
       // Update participant stats
