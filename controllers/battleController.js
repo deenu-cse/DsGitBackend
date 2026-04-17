@@ -190,7 +190,8 @@ exports.acceptBattle = async (req, res) => {
           type: battle.type,
           duration: battle.duration,
           opponent: battle.challenger === username ? battle.opponent : battle.challenger,
-          status: battle.status
+          status: battle.status,
+          endDate: battle.endDate || null
         }
       }
     });
@@ -267,6 +268,37 @@ exports.closeJoining = async (req, res) => {
     return res.json({ success: true, battle });
   } catch (err) {
     console.error('closeJoining error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+exports.getUserBattles = async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    // Find all battles where this user is a participant
+    const battles = await Battle.find({
+      'participants.username': username,
+      status: { $in: ['active', 'pending_invite'] }
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      battles: battles.map(b => ({
+        id: b.battleId,
+        type: b.type,
+        duration: b.duration,
+        opponent: b.opponent || b.challenger,
+        status: b.status,
+        endDate: b.endDate,
+        startDate: b.startDate,
+        participants: b.participants
+      }))
+    });
+  } catch (err) {
+    console.error('getUserBattles error:', err);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 };

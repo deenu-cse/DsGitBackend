@@ -120,6 +120,7 @@ app.get('/admin/stats', adminController.getAdminStats);
 app.get('/battles/wall', battleController.getBattleWall);
 app.get('/battles/open', battleController.getOpenBattles);
 app.get('/battles/:id', battleController.getBattleById);
+app.get('/battles/user/:username', battleController.getUserBattles);
 app.post('/battles/create', battleController.createBattle);
 app.post('/battles/:id/accept', battleController.acceptBattle);
 app.post('/battles/:id/close-joining', battleController.closeJoining);
