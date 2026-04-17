@@ -87,7 +87,7 @@ exports.createBattle = async (req, res) => {
 
     // Fallback ID generation
     const battleId = 'b-' + Math.random().toString(36).substring(2, 9);
-    const publicUrl = process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/battle/${battleId}` : `http://localhost:3001/battle/${battleId}`;
+    const publicUrl = process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/battle/${battleId}` : `http://localhost:3000/battle/${battleId}`;
 
     const newBattle = new Battle({
       battleId,
