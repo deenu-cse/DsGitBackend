@@ -279,23 +279,60 @@ exports.getUserBattles = async (req, res) => {
     // Find all battles where this user is a participant
     const battles = await Battle.find({
       'participants.username': username,
-      status: { $in: ['active', 'pending_invite'] }
+      status: { $in: ['active', 'pending_invite', 'won', 'lost'] }
     })
       .sort({ createdAt: -1 })
       .lean();
 
-    return res.json({
-      success: true,
-      battles: battles.map(b => ({
+    // Find current user's participant data in each battle
+    const userParticipants = new Map();
+    const battleDetails = battles.map(b => {
+      const userParticipant = b.participants.find(p => p.username === username);
+      userParticipants.set(b.battleId, userParticipant);
+      
+      // Find opponent(s) - for 1v1 it's the other participant, for multi-player get all others
+      const opponents = b.participants.filter(p => p.username !== username);
+      
+      return {
         id: b.battleId,
+        battleId: b.battleId,
         type: b.type,
         duration: b.duration,
-        opponent: b.opponent || b.challenger,
+        opponent: opponents.length === 1 ? opponents[0].username : null,
+        opponents: opponents,
         status: b.status,
         endDate: b.endDate,
         startDate: b.startDate,
-        participants: b.participants
-      }))
+        creator: b.challenger,
+        maxPlayers: b.maxPlayers,
+        isPublic: b.isPublic,
+        acceptingJoins: b.acceptingJoins,
+        publicUrl: b.publicUrl,
+        participants: b.participants,
+        // User's score data
+        score: userParticipant?.score || 0,
+        hardSolved: userParticipant?.hardSolved || 0,
+        mediumSolved: userParticipant?.mediumSolved || 0,
+        easySolved: userParticipant?.easySolved || 0,
+        platforms: userParticipant?.platforms || { leetcode: 0, gfg: 0, codingninjas: 0 },
+        currentStreak: userParticipant?.currentStreak || 0,
+        isEliminated: userParticipant?.isEliminated || false,
+        // Leaderboard data
+        leaderboard: b.participants.map(p => ({
+          username: p.username,
+          score: p.score || 0,
+          hardSolved: p.hardSolved || 0,
+          mediumSolved: p.mediumSolved || 0,
+          easySolved: p.easySolved || 0,
+          platforms: p.platforms || { leetcode: 0, gfg: 0, codingninjas: 0 },
+          isEliminated: p.isEliminated || false
+        })).sort((a, b) => b.score - a.score)
+      };
+    });
+
+    return res.json({
+      success: true,
+      battles: battleDetails
     });
   } catch (err) {
     console.error('getUserBattles error:', err);
