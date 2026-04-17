@@ -20,7 +20,7 @@ app.use(express.json());
 app.use(cors({
   origin: (origin, callback) => {
     // allow chrome-extension:// origins
-    if (!origin || origin.startsWith('chrome-extension://') || origin.startsWith('http://localhost:3001')) {
+    if (!origin || origin.startsWith('chrome-extension://') || origin.startsWith('http://localhost:3001') || origin.startsWith('http://localhost:3000')) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

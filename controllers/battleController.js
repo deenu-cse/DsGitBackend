@@ -32,7 +32,7 @@ exports.getBattleById = async (req, res) => {
 exports.getBattleWall = async (req, res) => {
   try {
     const liveBattles = await Battle.countDocuments({ status: 'active' });
-    
+
     // Total Fighters in active battles
     const activeBattleDocs = await Battle.find({ status: 'active' }, 'participants');
     let totalFighters = 0;
@@ -41,7 +41,7 @@ exports.getBattleWall = async (req, res) => {
     });
 
     const openToJoin = await Battle.countDocuments({ isPublic: true, acceptingJoins: true, status: 'pending_invite' });
-    
+
     // Eliminated Today
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -49,7 +49,7 @@ exports.getBattleWall = async (req, res) => {
       'participants.isEliminated': true,
       'participants.eliminatedOnDay': { $ne: null }
     });
-    
+
     let eliminatedTodayCount = 0;
     // Basic active users filtering if needed, but for now we'll just count anyone eliminated today
     // Actual implementation depends on how eliminatedOnDay maps to dates. 
@@ -84,7 +84,7 @@ exports.createBattle = async (req, res) => {
   try {
     // Basic body params
     const { type, duration, isPublic, maxPlayers, opponentUsername, challengerUsername } = req.body;
-    
+
     // Fallback ID generation
     const battleId = 'b-' + Math.random().toString(36).substring(2, 9);
     const publicUrl = process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/battle/${battleId}` : `http://localhost:3001/battle/${battleId}`;
@@ -117,11 +117,10 @@ exports.createBattle = async (req, res) => {
       });
     }
 
-    // CRITICAL: Notify the creator's extension about the new battle for real-time tracking
     const battleHandler = require('../ws/battleHandler');
     battleHandler.sendToUser(challengerUsername, {
       type: 'BATTLE_SYNC',
-      payload: { 
+      payload: {
         battle: {
           id: newBattle.battleId,
           type: newBattle.type,
@@ -183,7 +182,7 @@ exports.acceptBattle = async (req, res) => {
     const battleHandler = require('../ws/battleHandler');
     battleHandler.sendToUser(username, {
       type: 'BATTLE_SYNC',
-      payload: { 
+      payload: {
         battle: {
           id: battle.battleId,
           type: battle.type,
@@ -200,7 +199,7 @@ exports.acceptBattle = async (req, res) => {
         if (p.username !== username) {
           battleHandler.sendToUser(p.username, {
             type: 'BATTLE_SYNC',
-            payload: { 
+            payload: {
               battle: {
                 id: battle.battleId,
                 status: 'active',
@@ -235,7 +234,7 @@ exports.closeJoining = async (req, res) => {
     }
 
     battle.acceptingJoins = false;
-    
+
     // If we close joining and we have at least 2 people, we might activate it
     if (battle.participants.length >= 2 && battle.status === 'pending_invite') {
       battle.status = 'active';
@@ -252,7 +251,7 @@ exports.closeJoining = async (req, res) => {
     battle.participants.forEach(p => {
       battleHandler.sendToUser(p.username, {
         type: 'BATTLE_SYNC',
-        payload: { 
+        payload: {
           battle: {
             id: battle.battleId,
             status: battle.status,
