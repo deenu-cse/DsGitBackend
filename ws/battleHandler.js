@@ -115,6 +115,8 @@ exports.handleMessage = async (username, message, ws) => {
       if (participant) {
         participant.isEliminated = true;
         participant.eliminatedOnDay = dayBrokeOn || null;
+        // CRITICAL FIX: Mark participants array as modified
+        battle.markModified('participants');
       }
       
       // Determine if only one participant remains
@@ -170,6 +172,9 @@ exports.handleMessage = async (username, message, ws) => {
         if (platform === 'LeetCode') participant.platforms.leetcode++;
         if (platform === 'GeeksForGeeks') participant.platforms.gfg++;
         if (platform === 'CodingNinjas') participant.platforms.codingninjas++;
+        
+        // CRITICAL FIX: Mark participants array as modified so Mongoose detects nested changes
+        battle.markModified('participants');
       }
 
       const activity = {
@@ -182,6 +187,8 @@ exports.handleMessage = async (username, message, ws) => {
       };
       
       battle.activityFeed.push(activity);
+      // Mark activityFeed as modified to ensure it's persisted
+      battle.markModified('activityFeed');
       await battle.save();
 
       // Room broadcast

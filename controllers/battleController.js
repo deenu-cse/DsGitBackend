@@ -165,6 +165,8 @@ exports.acceptBattle = async (req, res) => {
         avatarInitial: username.charAt(0).toUpperCase(),
         joinedAt: new Date()
       });
+      // CRITICAL FIX: Mark participants array as modified so Mongoose detects the push
+      battle.markModified('participants');
     }
 
     // If it's a 1v1 and the second person joins, start it
