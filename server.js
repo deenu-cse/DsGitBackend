@@ -20,7 +20,7 @@ app.use(express.json());
 app.use(cors({
   origin: (origin, callback) => {
     // allow chrome-extension:// origins and localhost:3000 (frontend)
-    if (!origin || origin.startsWith('chrome-extension://') || origin.startsWith('http://localhost:3000')) {
+    if (!origin || origin.startsWith('chrome-extension://') || origin.startsWith('http://localhost:3000') || origin.startsWith('https://dsgit.vercel.app')) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
