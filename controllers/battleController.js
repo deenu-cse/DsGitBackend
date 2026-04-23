@@ -276,13 +276,61 @@ exports.getUserBattles = async (req, res) => {
   try {
     const { username } = req.params;
 
-    // Find all battles where this user is a participant
-    const battles = await Battle.find({
-      'participants.username': username,
+    // Find all battles where this user is involved
+    let battlesDocs = await Battle.find({
+      $or: [
+        { 'participants.username': username },
+        { challenger: username },
+        { opponent: username }
+      ],
       status: { $in: ['active', 'pending_invite', 'won', 'lost'] }
-    })
-      .sort({ createdAt: -1 })
-      .lean();
+    }).sort({ createdAt: -1 });
+
+    // Auto-repair missing participants and recalculate scores if needed
+    for (let b of battlesDocs) {
+      let modified = false;
+      
+      const ensureParticipant = (uName) => {
+        if (!uName) return;
+        if (!b.participants.find(p => p.username === uName)) {
+          b.participants.push({ 
+            username: uName, 
+            avatarInitial: uName.charAt(0).toUpperCase(), 
+            joinedAt: b.createdAt || new Date()
+          });
+          modified = true;
+        }
+      };
+      
+      ensureParticipant(b.challenger);
+      if (b.status !== 'pending_invite') ensureParticipant(b.opponent);
+      
+      if (modified) {
+        // Recalculate scores from activity feed
+        b.participants.forEach(p => {
+          p.score = 0; p.hardSolved = 0; p.mediumSolved = 0; p.easySolved = 0;
+          if (!p.platforms) p.platforms = { leetcode: 0, gfg: 0, codingninjas: 0 };
+        });
+        
+        b.activityFeed.forEach(act => {
+          const p = b.participants.find(p => p.username === act.username);
+          if (p) {
+            p.score += act.points || 0;
+            if (act.difficulty === 'Hard') p.hardSolved++;
+            if (act.difficulty === 'Medium') p.mediumSolved++;
+            if (act.difficulty === 'Easy') p.easySolved++;
+            if (act.platform === 'LeetCode') p.platforms.leetcode++;
+            if (act.platform === 'GeeksForGeeks') p.platforms.gfg++;
+            if (act.platform === 'CodingNinjas') p.platforms.codingninjas++;
+          }
+        });
+        
+        b.markModified('participants');
+        await b.save();
+      }
+    }
+
+    const battles = battlesDocs.map(b => b.toObject());
 
     // Find current user's participant data in each battle
     const userParticipants = new Map();

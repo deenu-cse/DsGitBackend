@@ -55,7 +55,12 @@ exports.handleMessage = async (username, message, ws) => {
         opponent,
         type: battleType,
         duration: parseInt(duration),
-        status: 'pending_invite'
+        status: 'pending_invite',
+        participants: [{
+          username: username,
+          avatarInitial: username.charAt(0).toUpperCase(),
+          joinedAt: new Date()
+        }]
       });
       await battle.save();
 
@@ -76,6 +81,16 @@ exports.handleMessage = async (username, message, ws) => {
       
       const battle = await Battle.findOne({ battleId });
       if (!battle) return;
+
+      const existing = battle.participants.find(p => p.username === username);
+      if (!existing) {
+        battle.participants.push({
+          username,
+          avatarInitial: username.charAt(0).toUpperCase(),
+          joinedAt: new Date()
+        });
+        battle.markModified('participants');
+      }
 
       battle.status = 'active';
       battle.startDate = new Date();
